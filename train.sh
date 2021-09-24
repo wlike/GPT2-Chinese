@@ -1,1 +1,2 @@
-python3 train.py --data_path data/train.json
+#python3 train.py --data_path data/train.txt --max_length=78 --epochs=25 --eval_interval=25 --train_examples=800 --valid_examples=86 --batch_size=32 --output_dir=model_jl_libai/
+python3 train.py --data_path data/train.txt --vocab_path os_model_ch_poem/vocab.txt --config_path os_model_ch_poem/config.json --max_length=78 --epochs=5 --eval_interval=5000 --train_examples=1100000 --valid_examples=2270 --batch_size=32 --output_dir=model_jl_scratch/

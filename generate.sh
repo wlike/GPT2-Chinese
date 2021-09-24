@@ -1,0 +1,1 @@
+python generate.py --prefix "[CLS]七言绝句[SEP]乘风破浪[SEP]" --device 0 --length 100 --n_ctx 100 --tokenizer_path os_model_ch_poem/vocab.txt --model_path model_jl/'epoch=0-step=9999.ckpt' --model_config os_model_ch_poem/config.json --topk 10 --temperature 1.0 --repetition_penalty 1.1

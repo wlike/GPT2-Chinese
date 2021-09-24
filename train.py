@@ -2,18 +2,21 @@ from transformers import GPT2LMHeadModel, GPT2Config
 from transformers import AdamW, get_linear_schedule_with_warmup, BertTokenizer
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 import torch
 import json
 import argparse
 
-# 11846807
-
-
 class DS(Dataset):
     def __init__(self, lines, vocab_path="vocab/vocab.txt", max_length=1024):
         self.data = lines
+        # 从 零 开始初始化
         self.tok = BertTokenizer(vocab_file=vocab_path)
+        # 从 Hugging Face 远端仓库加载预训练模型
+        #self.tok = BertTokenizer.from_pretrained("uer/gpt2-chinese-poem")
+        # 从 本地目录 加载预训练模型
+        #self.tok = BertTokenizer.from_pretrained("./os_model_ch_poem/")
         self.max_length = max_length
 
     def __len__(self):
@@ -38,7 +41,7 @@ class Net(pl.LightningModule):
         epochs,
         t_total=100000,
         config_path="config/model_config.json",
-        data_path="data/train.json",
+        data_path="data/train.txt",
         valid_examples=100,
         vocab_path="vocab/vocab.txt",
         max_length=1024,
@@ -51,10 +54,15 @@ class Net(pl.LightningModule):
         self.t_total = t_total
         self.warm_up_steps = warm_up_steps
         self.lr = lr
-        self.model_name = "bert_pretrained_model"
+        self.model_name = "jueju_lvshi"
         self.config = GPT2Config.from_json_file(config_path)
+        # 从 零 开始初始化
         self.model = GPT2LMHeadModel(config=self.config)
-        self.data = [json.loads(line.strip()) for line in open(data_path)]
+        # 从 Hugging Face 远端仓库加载预训练模型
+        #self.model = GPT2LMHeadModel.from_pretrained("uer/gpt2-chinese-poem")
+        # 从 本地目录 加载预训练模型
+        #self.model = GPT2LMHeadModel.from_pretrained("./os_model_ch_poem/")
+        self.data = [line.strip() for line in open(data_path)]
         self.dataset_train = DS(
             self.data[:-valid_examples], vocab_path=vocab_path, max_length=max_length
         )
@@ -114,10 +122,20 @@ class Net(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         loss = self.forward(batch["input_ids"], batch["attention_mask"])
+
+        self.log(
+            "valid_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
         return loss
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack(outputs).mean()
+
         self.log(
             "val_loss",
             avg_loss,
@@ -125,7 +143,6 @@ class Net(pl.LightningModule):
             prog_bar=True,
             logger=True,
         )
-        return {"val_loss": avg_loss}
 
 
 if __name__ == "__main__":
@@ -150,7 +167,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data_path",
-        default="data/train.json",
+        default="data/train.txt",
         type=str,
         required=False,
         help="原始训练语料",
@@ -161,7 +178,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--lr", default=1.5e-4, type=float, required=False, help="学习率")
     parser.add_argument(
-        "--warmup_steps", default=2000, type=int, required=False, help="warm up步数"
+        "--warmup_ratio", default=0.1, type=float, required=False, help="warm up步数 / 总的训练步数"
     )
     parser.add_argument(
         "--max_length", default=1024, type=int, required=False, help="单条文本最长长度"
@@ -170,10 +187,10 @@ if __name__ == "__main__":
         "--eval_interval", default=100, type=int, required=False, help="eval 步数"
     )
     parser.add_argument(
-        "--val_examples", default=100, type=int, required=False, help="选择多少验证集样本"
+        "--train_examples", default=100000, type=int, required=False, help="训练集有多少样本"
     )
     parser.add_argument(
-        "--t_total", default=100000, type=int, required=False, help="计划训练多少步"
+        "--valid_examples", default=100, type=int, required=False, help="选择多少验证集样本"
     )
     parser.add_argument(
         "--log_step", default=1, type=int, required=False, help="多少步汇报一次loss"
@@ -183,7 +200,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    val_examples = args.val_examples
+    train_examples = args.train_examples
+    valid_examples = args.valid_examples
     vocab_path = args.vocab_path
     max_length = args.max_length
     batch_size = args.batch_size
@@ -191,18 +209,23 @@ if __name__ == "__main__":
     output_path = args.output_dir
     eval_interval = args.eval_interval
     lr = args.lr
-    warmup_steps = args.warmup_steps
+    train_steps = int(epochs * train_examples / batch_size)
+    warmup_steps = int(train_steps * args.warmup_ratio)
+    print("t_total: {}".format(train_steps))
+    print("warmup_steps: {}".format(warmup_steps))
     data_path = args.data_path
     config_path = args.config_path
-    t_total = args.t_total
+
+    logger = TensorBoardLogger(output_path, name="tb_logs")
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=output_path,
         verbose=True,
-        period=1,
-        save_top_k=1,
+        #period=1,
+        save_top_k=-1,
         monitor="val_loss",
         mode="min",
+        every_n_epochs=1,
     )
     learning_rate_callback = LearningRateMonitor()
     trainer = pl.Trainer(
@@ -214,14 +237,15 @@ if __name__ == "__main__":
         val_check_interval=eval_interval,
         callbacks=[learning_rate_callback, checkpoint_callback],
         precision=32,
+        logger=logger,
     )
     net = Net(
         batch_size,
         epochs,
-        t_total=t_total,
+        t_total=train_steps,
         config_path=config_path,
         data_path=data_path,
-        valid_examples=val_examples,
+        valid_examples=valid_examples,
         vocab_path=vocab_path,
         max_length=max_length,
         warm_up_steps=warmup_steps,

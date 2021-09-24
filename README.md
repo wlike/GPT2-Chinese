@@ -52,7 +52,7 @@
 
 ## 使用方法
 
-1. 准备语料，放在data/train.json文件中，该文件的结构是：每行一个json字符串。
+1. 准备语料，放在data/train.txt文件中，该文件的结构是：每行一个文本字符串。
 2. （可选）准备训练参数设置，放在config文件夹中。
 3. （可选）准备tokenizer词表，放在vocab文件夹中。
 4. 运行 bash train.sh进行训练。具体训练参数可以参考train.py文件中的argparse相关描述。

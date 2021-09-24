@@ -85,10 +85,12 @@ def sample_sequence(
     device="cpu",
 ):
     context = torch.tensor(context, dtype=torch.long, device=device)
+    context_len = len(context)
     context = context.unsqueeze(0)
     generated = context
     with torch.no_grad():
-        for _ in trange(length):
+        idx = 0
+        while idx < length:
             inputs = {"input_ids": generated[0][-(n_ctx - 1) :].unsqueeze(0)}
             outputs = model(
                 **inputs
@@ -104,8 +106,11 @@ def sample_sequence(
             next_token = torch.multinomial(
                 F.softmax(filtered_logits, dim=-1), num_samples=1
             )
+            if tokenizer.convert_ids_to_tokens(next_token)[0] == '[SEP]':
+                continue
+            idx += 1
             generated = torch.cat((generated, next_token.unsqueeze(0)), dim=1)
-    return generated.tolist()[0]
+    return generated[0][context_len:].tolist()
 
 
 def fast_sample_sequence(
@@ -224,7 +229,10 @@ def main():
             repitition_penalty=repetition_penalty,
             device=device,
         )
-        print(tokenizer.decode(out))
+        res = raw_text + ''.join(tokenizer.decode(out))
+        res = res.replace(' ', '')
+        pos = res.rfind('，')
+        print(res[:pos])
 
 
 if __name__ == "__main__":
